@@ -1,0 +1,12 @@
+{
+  "extends": "./node_modules/@sentry-internal/typescript/tsconfig.json",
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "outDir": "dist",
+    "target": "es6",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "5.0"
+  }
+}

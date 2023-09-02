@@ -1,0 +1,4 @@
+node_modules/
+dist/
+src/worker-script.ts
+src/_bundle.mjs
