@@ -66,7 +66,7 @@ if (parentPort === null) {
 
 const options: WorkerData = workerData;
 
-async function sendTimeoutEvent(blockedMs: number, recovered: boolean) {
+async function sendTimeoutEvent(blockedMs: number, hung: boolean) {
   const dsn = dsnFromString(options.dsn);
 
   if (!dsn) {
@@ -79,11 +79,8 @@ async function sendTimeoutEvent(blockedMs: number, recovered: boolean) {
     release: options.release,
     environment: options.environment,
     message: `App Not Responding`,
-    extra: {
-      blockedMilliseconds: blockedMs,
-      recovered,
-    },
-    level: recovered ? "warning" : "error",
+    extra: { blockedMs, hung },
+    level: hung ? "error" : "warning",
   };
 
   console.log("Sending event", event);

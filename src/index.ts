@@ -22,8 +22,6 @@ export interface WorkerData extends Options {
 export class Watchdog implements Integration {
   public name: string = "Watchdog";
 
-  private _worker: Worker | undefined;
-
   constructor(private readonly _options: Partial<Options> = {}) {}
 
   public setupOnce(_: unknown, getCurrentHub: () => Hub): void {
@@ -44,16 +42,16 @@ export class Watchdog implements Integration {
       errorThreshold: this._options.errorThreshold || DEFAULT_ERROR_THRESHOLD,
     };
 
-    this._worker = new Worker(
+    const worker = new Worker(
       new URL(`data:application/javascript;base64,${base64WorkerScript}`),
       { workerData }
     );
 
     // Ensure this thread can't block app exit
-    this._worker.unref();
+    worker.unref();
 
     setInterval(() => {
-      this._worker?.postMessage("poll");
+      worker?.postMessage("poll");
     }, workerData.interval).unref();
   }
 }

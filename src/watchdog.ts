@@ -14,7 +14,7 @@ interface WatchdogOptions {
   /**
    * Callback is called when the event loop is blocked for at least `threshold`ms
    */
-  callback: (blockedMs: number, recovered: boolean) => void;
+  callback: (blockedMs: number, hung: boolean) => void;
 }
 
 type PollFn = () => void;
@@ -36,7 +36,7 @@ export function watchdog(options: WatchdogOptions): [PollFn, NodeJS.Timeout] {
     const diffMs = Math.floor(diff[0] * 1e3 + diff[1] / 1e6);
 
     if (diffMs > options.pollInterval + options.nonRecoveredThreshold) {
-      options.callback(diffMs - options.pollInterval, false);
+      options.callback(diffMs - options.pollInterval, true);
     }
 
     if (
@@ -46,7 +46,7 @@ export function watchdog(options: WatchdogOptions): [PollFn, NodeJS.Timeout] {
       diffMs < lastDiff
     ) {
       // We recovered from a blocked event loop
-      options.callback(lastDiff - options.pollInterval, true);
+      options.callback(lastDiff - options.pollInterval, false);
       lastDiff = 0;
     }
 
