@@ -96,7 +96,7 @@ async function sendTimeoutEvent(blockedMs: number, hung: boolean) {
 const [poll, _timer] = watchdog({
   pollInterval: options.interval,
   threshold: options.warningThreshold,
-  nonRecoveredThreshold: options.errorThreshold,
+  nonRecoveredThreshold: options.hungThreshold,
   callback: sendTimeoutEvent,
 });
 

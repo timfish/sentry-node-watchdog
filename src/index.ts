@@ -4,12 +4,12 @@ import { Worker } from "worker_threads";
 
 const DEFAULT_INTERVAL = 50;
 const DEFAULT_WARNING_THRESHOLD = 50;
-const DEFAULT_ERROR_THRESHOLD = 5000;
+const DEFAULT_HUNG_THRESHOLD = 5000;
 
 interface Options {
   interval: number;
   warningThreshold: number;
-  errorThreshold: number;
+  hungThreshold: number;
 }
 
 export interface WorkerData extends Options {
@@ -39,7 +39,7 @@ export class Watchdog implements Integration {
       interval: this._options.interval || DEFAULT_INTERVAL,
       warningThreshold:
         this._options.warningThreshold || DEFAULT_WARNING_THRESHOLD,
-      errorThreshold: this._options.errorThreshold || DEFAULT_ERROR_THRESHOLD,
+      hungThreshold: this._options.hungThreshold || DEFAULT_HUNG_THRESHOLD,
     };
 
     const worker = new Worker(
