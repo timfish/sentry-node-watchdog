@@ -17,7 +17,7 @@ the main thread and determines two levels of detection to send events:
 
 - A warning event is sent when the main thread poll was late and includes the
   length of the delay in the event
-- An error event is sent when the main thread poll is very late and we don't
+- An error event is sent when the main thread poll is very late (ie. hung) and we don't
   want to continue waiting just to measure the delay. 
 
 Once an event has been sent, the worker thread terminates to ensure that we

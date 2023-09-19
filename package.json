@@ -5,18 +5,18 @@
   "module": "dist/index.js",
   "license": "MIT",
   "scripts": {
-    "prebuild": "yarn build-worker",
-    "build-worker": "rollup -c",
     "build": "tsc",
     "test": "node test.js"
   },
   "dependencies": {
     "@sentry/node": "7.66.0",
     "@sentry/core": "7.66.0",
-    "@sentry/utils": "7.66.0"
+    "@sentry/utils": "7.66.0",
+    "ws": "^8.13.0"
   },
   "devDependencies": {
-    "@types/node": "14",
+    "@types/ws": "^8.5.5",
+    "@types/node": "20",
     "@sentry-internal/typescript": "7.66.0",
     "@rollup/plugin-node-resolve": "^15.2.1",
     "@rollup/plugin-commonjs": "^25.0.4",
@@ -26,5 +26,8 @@
     "@rollup/plugin-replace": "^5.0.2",
     "esbuild": "^0.19.2",
     "typescript": "^5.2.2"
+  },
+  "volta": {
+    "node": "20.6.1"
   }
 }
