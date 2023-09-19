@@ -1,78 +1,20 @@
-import { Integration } from "@sentry/types";
+import { Integration, Event } from "@sentry/types";
 import { ChildProcess, fork } from "child_process";
 import * as inspector from "inspector";
 import { watchdog } from "./watchdog";
-import { captureMessage, flush } from "@sentry/node";
-import { WebSocket } from "ws";
+import { captureEvent, flush } from "@sentry/node";
+import { StackFrame } from "@sentry/types";
+import { connectToDebugger } from "./debugger";
 
 const DEFAULT_INTERVAL = 50;
-const DEFAULT_WARNING_THRESHOLD = 50;
-const DEFAULT_HUNG_THRESHOLD = 2000;
+const DEFAULT_THRESHOLD = 200;
+
+const isChildProcess = !!process.send;
 
 interface Options {
   interval: number;
-  warningThreshold: number;
-  hungThreshold: number;
+  threshold: number;
   inspect: boolean;
-}
-
-function connectToDebugger(url: string): () => void {
-  let ws: WebSocket | undefined;
-  let id = 0;
-  const scripts = new Map<string, string>();
-
-  while (!ws) {
-    try {
-      ws = new WebSocket(url);
-      ws.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.method === "Debugger.scriptParsed") {
-          scripts.set(message.params.scriptId, message.params.url);
-          return;
-        }
-        if (message.method === "Debugger.paused") {
-          console.log(
-            "callFrames:",
-            message.params.callFrames.map(
-              (f: inspector.Debugger.CallFrame) => f.functionName
-            )
-          );
-          ws?.send(
-            JSON.stringify({ id: id++, method: "Debugger.resume", params: {} })
-          );
-        }
-      });
-      ws.on("error", (e) => {
-        console.error(e);
-      });
-      ws.on("open", () => {
-        ws?.send(
-          JSON.stringify({ id: id++, method: "Debugger.enable", params: {} })
-        );
-        ws?.send(
-          JSON.stringify({
-            id: id++,
-            method: "Debugger.setSkipAllPauses",
-            params: { skip: false },
-          })
-        );
-      });
-    } catch (_) {
-      //
-    }
-  }
-
-  let hasPaused = false;
-
-  return () => {
-    if (!hasPaused) {
-      hasPaused = true;
-
-      ws?.send(
-        JSON.stringify({ id: id++, method: "Debugger.pause", params: {} })
-      );
-    }
-  };
 }
 
 class Watchdog implements Integration {
@@ -81,8 +23,8 @@ class Watchdog implements Integration {
   constructor(private readonly _options: Partial<Options> = {}) {}
 
   public setupOnce(): void {
-    if (process.send) {
-      this._childProcess();
+    if (isChildProcess) {
+      this._setupChildProcess();
     } else {
       this._setupMainProcess();
     }
@@ -105,39 +47,63 @@ class Watchdog implements Integration {
     });
 
     setInterval(() => {
-      child?.send({ inspectURL });
+      try {
+        child?.send({ inspectURL });
+      } catch (_) {
+        // Ignore
+      }
     }, this._options.interval);
   }
 
-  private async _sendEventLoopBlockedEvent(blockedMs: number, hung: boolean) {
-    captureMessage(`App Not Responding`, {
-      level: hung ? "error" : "warning",
-      extra: { blockedMs, hung },
-    });
+  private async _sendEventLoopBlockedEvent(
+    blockedMs: number,
+    frames?: StackFrame[]
+  ) {
+    const event: Event = {
+      level: "error",
+      exception: {
+        values: [
+          {
+            value: "App Not Responding",
+            type: "AppNotResponding",
+            stacktrace: { frames },
+          },
+        ],
+      },
+      extra: { blockedMs },
+    };
+
+    captureEvent(event);
 
     await flush(2000);
     process.exit();
   }
 
-  private _childProcess() {
+  private _setupChildProcess() {
     let pause: (() => void) | undefined;
 
     const [poll, _timer] = watchdog({
       pollInterval: this._options.interval || DEFAULT_INTERVAL,
-      warningThreshold:
-        this._options.warningThreshold || DEFAULT_WARNING_THRESHOLD,
-      hungThreshold: this._options.hungThreshold || DEFAULT_HUNG_THRESHOLD,
-      callback: (blockedMs: number, hung: boolean) => {
-        if (hung) {
+      threshold: this._options.threshold || DEFAULT_THRESHOLD,
+      callback: (blockedMs: number) => {
+        if (this._options.inspect) {
           pause?.();
+        } else {
+          this._sendEventLoopBlockedEvent(blockedMs);
         }
-        // this._sendEventLoopBlockedEvent(blockedMs, hung);
       },
     });
 
     process.on("message", (message: { inspectURL: string | undefined }) => {
+      // If the debugger hasn't been started yet and we have a URL, start the debugger
       if (pause === undefined && message.inspectURL) {
-        pause = connectToDebugger(message.inspectURL);
+        pause = connectToDebugger(message.inspectURL, (frames) => {
+          this._sendEventLoopBlockedEvent(
+            (this._options.interval || DEFAULT_INTERVAL) +
+              (this._options.threshold || DEFAULT_THRESHOLD),
+            frames
+          );
+        });
       }
       poll();
     });
@@ -148,12 +114,11 @@ export function createWatchdog(options: Partial<Options> = {}): {
   integration: Integration;
   guard: Promise<void>;
 } {
-  const isChild = !!process.send;
-  console.log(isChild ? "is child" : "is parent");
+  console.log(isChildProcess ? "is child" : "is parent");
 
   return {
-    guard: isChild
-      ? // In the child process, the promise never resolves
+    guard: isChildProcess
+      ? // In the child process, the promise never resolves which stops the app code from running
         new Promise<void>((_) => {})
       : Promise.resolve(),
     integration: new Watchdog(options),

@@ -6,15 +6,11 @@ interface WatchdogOptions {
   /**
    * Threshold above pollInterval at which we want to call the callback
    */
-  warningThreshold: number;
-  /**
-   * Threshold above pollInterval at which we stop waiting for a poll and assume the event loop is blocked forever
-   */
-  hungThreshold: number;
+  threshold: number;
   /**
    * Callback is called when the event loop is blocked for at least `threshold`ms
    */
-  callback: (blockedMs: number, hung: boolean) => void;
+  callback: (blockedMs: number) => void;
 }
 
 type PollFn = () => void;
@@ -29,28 +25,23 @@ export function watchdog(options: WatchdogOptions): [PollFn, NodeJS.Timeout] {
     lastPoll = process.hrtime();
   }
 
-  let lastDiff = 0;
+  let triggered = false;
 
   const timer = setInterval(() => {
     const diff = process.hrtime(lastPoll);
     const diffMs = Math.floor(diff[0] * 1e3 + diff[1] / 1e6);
 
-    if (diffMs > options.pollInterval + options.hungThreshold) {
-      options.callback(diffMs - options.pollInterval, true);
-    }
-
     if (
-      // The last diff was above the threshold
-      lastDiff > options.pollInterval + options.warningThreshold &&
-      // The current diff has dropped below the previous
-      diffMs < lastDiff
+      triggered === false &&
+      diffMs > options.pollInterval + options.threshold
     ) {
-      // We recovered from a blocked event loop
-      options.callback(lastDiff - options.pollInterval, false);
-      lastDiff = 0;
+      triggered = true;
+      options.callback(diffMs - options.pollInterval);
     }
 
-    lastDiff = diffMs;
+    if (diffMs < options.pollInterval + options.threshold) {
+      triggered = false;
+    }
   }, 10);
 
   return [poll, timer];
