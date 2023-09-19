@@ -38,20 +38,30 @@ class Watchdog implements Integration {
       inspectURL = inspector.url();
     }
 
-    let child: ChildProcess | undefined = fork(process.argv[1], {
+    let closed = false;
+
+    const child = fork(process.argv[1], {
       stdio: "inherit",
     });
     child.unref();
+    child.on("error", () => {
+      closed = true;
+    });
     child.on("disconnect", () => {
-      child = undefined;
+      closed = true;
     });
     child.on("exit", () => {
-      child = undefined;
+      closed = true;
     });
 
-    setInterval(() => {
+    const timer = setInterval(() => {
+      if (closed) {
+        clearTimeout(timer);
+        return;
+      }
+
       try {
-        child?.send({ inspectURL });
+        child.send({ inspectURL });
       } catch (_) {
         // Ignore
       }

@@ -59,8 +59,8 @@ export function connectToDebugger(
           .map((frame) => {
             let filename = scripts.get(frame.location.scriptId);
 
-            if (filename?.startsWith("file://")) {
-              filename = filename?.slice(7);
+            if (filename && filename.startsWith("file://")) {
+              filename = filename.slice(7);
             }
 
             const colno = frame.location.columnNumber
