@@ -45,6 +45,9 @@ class Watchdog implements Integration {
     child.on("disconnect", () => {
       child = undefined;
     });
+    child.on("exit", () => {
+      child = undefined;
+    });
 
     setInterval(() => {
       try {

@@ -57,13 +57,25 @@ export function connectToDebugger(
         // Map them to Sentry frames
         const frames: StackFrame[] = debuggerFrames
           .map((frame) => {
-            const url = scripts.get(frame.location.scriptId);
+            let filename = scripts.get(frame.location.scriptId);
+
+            if (filename?.startsWith("file://")) {
+              filename = filename?.slice(7);
+            }
+
+            const colno = frame.location.columnNumber
+              ? frame.location.columnNumber + 1
+              : undefined;
+            const lineno = frame.location.lineNumber
+              ? frame.location.lineNumber + 1
+              : undefined;
+
             return {
-              colno: frame.location.columnNumber,
-              filename: url,
+              filename,
               function: frame.functionName || "?",
-              in_app: isInApp(url),
-              lineno: frame.location.lineNumber,
+              colno,
+              lineno,
+              in_app: isInApp(filename),
             };
           })
           .reverse();
