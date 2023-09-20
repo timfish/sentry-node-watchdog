@@ -3,13 +3,14 @@ import { fork } from "child_process";
 import * as inspector from "inspector";
 import { watchdogTimer } from "./watchdog";
 import { captureEvent, flush } from "@sentry/node";
-import { StackFrame } from "@sentry/types";
-import { connectToDebugger } from "./debugger";
+import type { StackFrame } from "@sentry/types";
+import { captureStackTrace } from "./debugger";
 
 const DEFAULT_INTERVAL = 50;
 const DEFAULT_THRESHOLD = 200;
 
 interface Options {
+  entryScript: string;
   pollInterval: number;
   thresholdMs: number;
   captureStackTrace: boolean;
@@ -21,8 +22,8 @@ async function sendEvent(blockedMs: number, frames?: StackFrame[]) {
     exception: {
       values: [
         {
-          value: "App Not Responding",
-          type: "AppNotResponding",
+          value: "ANR",
+          type: "ApplicationNotResponding",
           stacktrace: { frames },
         },
       ],
@@ -36,7 +37,7 @@ async function sendEvent(blockedMs: number, frames?: StackFrame[]) {
   process.exit();
 }
 
-function mainProcess(options: Options) {
+function setupMainProcess(options: Options) {
   let inspectURL: string | undefined;
 
   if (options.captureStackTrace) {
@@ -44,7 +45,7 @@ function mainProcess(options: Options) {
     inspectURL = inspector.url();
   }
 
-  const child = fork(process.argv[1], {
+  const child = fork(options.entryScript, {
     stdio: "inherit",
   });
   child.unref();
@@ -68,15 +69,15 @@ function mainProcess(options: Options) {
   });
 }
 
-function childProcess(options: Options) {
-  let pause: (() => void) | undefined;
+function setupChildProcess(options: Options) {
+  let pauseAndCapture: (() => void) | undefined;
 
-  const [poll, _timer] = watchdogTimer(
+  const [pollWatchdog, _timer] = watchdogTimer(
     options.pollInterval,
     options.thresholdMs,
     () => {
-      if (pause) {
-        pause();
+      if (pauseAndCapture) {
+        pauseAndCapture();
       } else {
         sendEvent(options.pollInterval + options.thresholdMs);
       }
@@ -84,14 +85,14 @@ function childProcess(options: Options) {
   );
 
   process.on("message", (message: { inspectURL: string | undefined }) => {
+    pollWatchdog();
+
     // If the debugger hasn't been started yet and we have been passed a URL, start the debugger
-    if (pause === undefined && message.inspectURL) {
-      pause = connectToDebugger(message.inspectURL, (frames) => {
+    if (pauseAndCapture === undefined && message.inspectURL) {
+      pauseAndCapture = captureStackTrace(message.inspectURL, (frames) => {
         sendEvent(options.pollInterval + options.thresholdMs, frames);
       });
     }
-
-    poll();
   });
 }
 
@@ -99,17 +100,18 @@ export function watchdog(options: Partial<Options>): Promise<void> {
   const isChildProcess = !!process.send;
 
   const anrOptions: Options = {
+    entryScript: options.entryScript || process.argv[1],
     pollInterval: options.pollInterval || DEFAULT_INTERVAL,
     thresholdMs: options.thresholdMs || DEFAULT_THRESHOLD,
     captureStackTrace: !!options.captureStackTrace,
   };
 
   if (isChildProcess) {
-    childProcess(anrOptions);
+    setupChildProcess(anrOptions);
     // In the child process, the promise never resolves which stops the app code from running
     return new Promise<void>(() => {});
   } else {
-    mainProcess(anrOptions);
+    setupMainProcess(anrOptions);
     // In the main process, the promise resolves immediately
     return Promise.resolve();
   }

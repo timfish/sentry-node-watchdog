@@ -2,8 +2,6 @@ import { WebSocket } from "ws";
 import type { Debugger } from "inspector";
 import type { StackFrame } from "@sentry/types";
 
-type Pause = () => void;
-
 function isInApp(filename: string | undefined): boolean {
   const isInternal =
     filename &&
@@ -25,70 +23,90 @@ function isInApp(filename: string | undefined): boolean {
   );
 }
 
-export function connectToDebugger(
-  url: string,
-  stackTrace: (frames: StackFrame[]) => void
-): Pause {
-  let id = 0;
+/**
+ * Converts Debugger.CallFrames to Sentry StackFrames
+ */
+function callFramesToStackFrames(
+  callFrames: Debugger.CallFrame[],
+  filenameFromId: (id: string) => string | undefined
+): StackFrame[] {
+  return callFrames
+    .map((frame) => {
+      let filename = filenameFromId(frame.location.scriptId);
 
-  // scriptId -> url map
+      if (filename && filename.startsWith("file://")) {
+        filename = filename.slice(7);
+      }
+
+      // CallFrame row/col is 0 based, StackFrame is 1 based
+      const colno = frame.location.columnNumber
+        ? frame.location.columnNumber + 1
+        : undefined;
+      const lineno = frame.location.lineNumber
+        ? frame.location.lineNumber + 1
+        : undefined;
+
+      return {
+        filename,
+        function: frame.functionName || "?",
+        colno,
+        lineno,
+        in_app: isInApp(filename),
+      };
+    })
+    .reverse();
+}
+
+type DebugMessage =
+  | {
+      method: "Debugger.scriptParsed";
+      params: Debugger.ScriptParsedEventDataType;
+    }
+  | { method: "Debugger.paused"; params: Debugger.PausedEventDataType };
+
+function debuggerProtocol(
+  url: string,
+  onMessage: (message: DebugMessage) => void
+): (method: string) => void {
+  let id = 0;
+  const ws = new WebSocket(url);
+
+  ws.on("message", (data) => {
+    const message = JSON.parse(data.toString()) as DebugMessage;
+    onMessage(message);
+  });
+
+  return (method: string, params?: any) => {
+    ws.send(JSON.stringify({ id: id++, method, params }));
+  };
+}
+
+export function captureStackTrace(
+  url: string,
+  callback: (frames: StackFrame[]) => void
+): () => void {
+  // Collect scriptId -> url map so we can look up the filenames later
   const scripts = new Map<string, string>();
 
-  const ws = new WebSocket(url);
-  ws.on("message", (data) => {
-    const message = JSON.parse(data.toString());
+  const sendCommand = debuggerProtocol(url, (message) => {
+    if (message.method === "Debugger.scriptParsed") {
+      scripts.set(message.params.scriptId, message.params.url);
+    } else if (message.method === "Debugger.paused") {
+      // copy the frames
+      const callFrames = [...message.params.callFrames];
+      // and resume immediately
+      sendCommand("Debugger.resume");
 
-    switch (message.method) {
-      // We keep track of all parsed scripts so we can map scriptIds to URLs later
-      case "Debugger.scriptParsed":
-        scripts.set(message.params.scriptId, message.params.url);
-        return;
-      case "Debugger.paused":
-        // copy the frames
-        const debuggerFrames: Debugger.CallFrame[] = [
-          ...message.params.callFrames,
-        ];
+      const frames = callFramesToStackFrames(callFrames, (id) =>
+        scripts.get(id)
+      );
 
-        // and resume as soon as possible
-        ws.send(
-          JSON.stringify({ id: id++, method: "Debugger.resume", params: {} })
-        );
-
-        // Map them to Sentry frames
-        const frames: StackFrame[] = debuggerFrames
-          .map((frame) => {
-            let filename = scripts.get(frame.location.scriptId);
-
-            if (filename && filename.startsWith("file://")) {
-              filename = filename.slice(7);
-            }
-
-            const colno = frame.location.columnNumber
-              ? frame.location.columnNumber + 1
-              : undefined;
-            const lineno = frame.location.lineNumber
-              ? frame.location.lineNumber + 1
-              : undefined;
-
-            return {
-              filename,
-              function: frame.functionName || "?",
-              colno,
-              lineno,
-              in_app: isInApp(filename),
-            };
-          })
-          .reverse();
-
-        stackTrace(frames);
-        return;
+      callback(frames);
     }
   });
 
   return () => {
-    ws.send(
-      JSON.stringify({ id: id++, method: "Debugger.enable", params: {} })
-    );
-    ws.send(JSON.stringify({ id: id++, method: "Debugger.pause", params: {} }));
+    sendCommand("Debugger.enable");
+    sendCommand("Debugger.pause");
   };
 }

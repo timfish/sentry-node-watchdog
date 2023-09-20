@@ -16,7 +16,7 @@ interface WatchdogOptions {
 type PollFn = () => void;
 
 /**
- * Creates a Watchdog
+ * Creates a Watchdog timer
  */
 export function watchdogTimer(
   pollInterval: number,
