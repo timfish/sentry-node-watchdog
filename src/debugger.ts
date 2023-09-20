@@ -1,6 +1,6 @@
-import { WebSocket } from "ws";
 import type { Debugger } from "inspector";
 import type { StackFrame } from "@sentry/types";
+import { createWebSocketClient } from "./websocket";
 
 function isInApp(filename: string | undefined): boolean {
   const isInternal =
@@ -64,12 +64,12 @@ type DebugMessage =
     }
   | { method: "Debugger.paused"; params: Debugger.PausedEventDataType };
 
-function debuggerProtocol(
+async function webSocketDebuggerProtocol(
   url: string,
   onMessage: (message: DebugMessage) => void
-): (method: string) => void {
+): Promise<(method: string) => void> {
   let id = 0;
-  const ws = new WebSocket(url);
+  const ws = await createWebSocketClient(url);
 
   ws.on("message", (data) => {
     const message = JSON.parse(data.toString()) as DebugMessage;
@@ -81,14 +81,14 @@ function debuggerProtocol(
   };
 }
 
-export function captureStackTrace(
+export async function captureStackTrace(
   url: string,
   callback: (frames: StackFrame[]) => void
-): () => void {
+): Promise<() => void> {
   // Collect scriptId -> url map so we can look up the filenames later
   const scripts = new Map<string, string>();
 
-  const sendCommand = debuggerProtocol(url, (message) => {
+  const sendCommand = await webSocketDebuggerProtocol(url, (message) => {
     if (message.method === "Debugger.scriptParsed") {
       scripts.set(message.params.scriptId, message.params.url);
     } else if (message.method === "Debugger.paused") {

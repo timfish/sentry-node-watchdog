@@ -89,8 +89,10 @@ function setupChildProcess(options: Options) {
 
     // If the debugger hasn't been started yet and we have been passed a URL, start the debugger
     if (pauseAndCapture === undefined && message.inspectURL) {
-      pauseAndCapture = captureStackTrace(message.inspectURL, (frames) => {
+      captureStackTrace(message.inspectURL, (frames) => {
         sendEvent(options.pollInterval + options.thresholdMs, frames);
+      }).then((pause) => {
+        pauseAndCapture = pause;
       });
     }
   });
