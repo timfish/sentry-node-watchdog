@@ -18,7 +18,11 @@ type PollFn = () => void;
 /**
  * Creates a Watchdog
  */
-export function watchdog(options: WatchdogOptions): [PollFn, NodeJS.Timeout] {
+export function watchdogTimer(
+  pollInterval: number,
+  threshold: number,
+  callback: () => void
+): [PollFn, NodeJS.Timeout] {
   let lastPoll = process.hrtime();
 
   function poll() {
@@ -31,15 +35,12 @@ export function watchdog(options: WatchdogOptions): [PollFn, NodeJS.Timeout] {
     const diff = process.hrtime(lastPoll);
     const diffMs = Math.floor(diff[0] * 1e3 + diff[1] / 1e6);
 
-    if (
-      triggered === false &&
-      diffMs > options.pollInterval + options.threshold
-    ) {
+    if (triggered === false && diffMs > pollInterval + threshold) {
       triggered = true;
-      options.callback(diffMs - options.pollInterval);
+      callback();
     }
 
-    if (diffMs < options.pollInterval + options.threshold) {
+    if (diffMs < pollInterval + threshold) {
       triggered = false;
     }
   }, 10);

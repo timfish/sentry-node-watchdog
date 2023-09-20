@@ -85,13 +85,10 @@ export function connectToDebugger(
     }
   });
 
-  ws.on("open", () => {
+  return () => {
     ws.send(
       JSON.stringify({ id: id++, method: "Debugger.enable", params: {} })
     );
-  });
-
-  return () => {
     ws.send(JSON.stringify({ id: id++, method: "Debugger.pause", params: {} }));
   };
 }

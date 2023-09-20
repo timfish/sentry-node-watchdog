@@ -1,17 +1,14 @@
 const { init } = require("@sentry/node");
-const { createWatchdog } = require("./dist/index");
+const { watchdog } = require("./dist/index");
 const crypto = require("crypto");
-
-const { guard, integration } = createWatchdog({ inspect: true });
 
 init({
   dsn: "https://b5c57102f0ce214664c1af9869fdb187@o51950.ingest.sentry.io/4505800098709504",
   debug: true,
   release: "test@1.0.0",
-  integrations: [integration],
 });
 
-guard.then(() => {
+watchdog({ captureStackTrace: true }).then(() => {
   let counter = 0;
   setInterval(() => {
     console.log("Main event loop running", counter++);
